@@ -7,7 +7,7 @@ import (
 
 type Book struct {
 	Order               []*Order
-	Transaction         []*Transaction
+	Transactions        []*Transaction
 	OrdersChannel       chan *Order
 	OrdersChannelOutput chan *Order
 	WaitGroup           *sync.WaitGroup
@@ -16,7 +16,7 @@ type Book struct {
 func NewBook(orderChannel chan *Order, orderChannelOutput chan *Order, waitGroup *sync.WaitGroup) *Book {
 	return &Book{
 		Order:               []*Order{},
-		Transaction:         []*Transaction{},
+		Transactions:        []*Transaction{},
 		OrdersChannel:       orderChannel,
 		OrdersChannelOutput: orderChannelOutput,
 		WaitGroup:           waitGroup,
@@ -65,4 +65,28 @@ func (book *Book) Trade() {
 			}
 		}
 	}
+}
+
+func (book *Book) AddTransaction(transaction *Transaction, wg *sync.WaitGroup) {
+	defer wg.Done()
+
+	sellingShares := transaction.SellingOrder.PendingShares
+	buyingShares := transaction.BuyingOrder.PendingShares
+
+	minShares := sellingShares
+	if buyingShares < minShares {
+		minShares = buyingShares
+	}
+
+	transaction.SellingOrder.Investor.UpdateAssetPosition(transaction.SellingOrder.ID, -minShares)
+	transaction.AddBuyOrderPendingShares(-minShares)
+	transaction.BuyingOrder.Investor.UpdateAssetPosition(transaction.BuyingOrder.ID, minShares)
+	transaction.AddSellOrderPendingShares(-minShares)
+
+	transaction.CalculateTotal(transaction.Shares, transaction.BuyingOrder.Price)
+
+	transaction.CloseBuyOrder()
+	transaction.CloseSellOrder()
+
+	book.Transactions = append(book.Transactions, transaction)
 }
